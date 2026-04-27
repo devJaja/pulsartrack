@@ -114,6 +114,10 @@ impl RevenueSettlementContract {
             panic!("unauthorized");
         }
 
+        if amount <= 0 {
+            panic!("revenue amount must be positive");
+        }
+
         let mut pool: RevenuePool = env.storage().instance().get(&DataKey::RevenuePool).unwrap();
 
         let platform_fee = (amount * pool.platform_pct as i128) / 10_000;
