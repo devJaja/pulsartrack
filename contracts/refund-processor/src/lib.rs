@@ -28,6 +28,7 @@ pub struct RefundRequest {
     pub reason: String,
     pub status: RefundStatus,
     pub submitted_at: u64,
+    pub deadline: u64, // Refund deadline timestamp
     pub resolved_at: Option<u64>,
 }
 
@@ -35,6 +36,8 @@ pub struct RefundRequest {
 #[derive(Clone)]
 pub struct Campaign {
     pub total_budget: i128,
+    pub end_time: u64,           // Campaign end timestamp
+    pub refund_deadline: u64,    // Deadline for submitting refund requests
 }
 
 #[contracttype]
@@ -114,6 +117,14 @@ impl RefundProcessorContract {
             .get(&DataKey::TokenAddress)
             .unwrap();
 
+        let auto_refund_period: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AutoRefundPeriod)
+            .unwrap_or(604_800u64);
+
+        let refund_deadline = campaign.end_time + auto_refund_period;
+
         let refund = RefundRequest {
             refund_id,
             requester: requester.clone(),
@@ -124,6 +135,7 @@ impl RefundProcessorContract {
             reason,
             status: RefundStatus::Requested,
             submitted_at: env.ledger().timestamp(),
+            deadline: refund_deadline,
             resolved_at: None,
         };
 
@@ -159,6 +171,12 @@ impl RefundProcessorContract {
 
         if refund.status != RefundStatus::Requested && refund.status != RefundStatus::UnderReview {
             panic!("invalid status");
+        }
+
+        // Check refund deadline has not passed
+        let now = env.ledger().timestamp();
+        if now > refund.deadline {
+            panic!("refund deadline has passed");
         }
 
         refund.amount_approved = approved_amount.min(refund.amount_requested);
@@ -220,6 +238,12 @@ impl RefundProcessorContract {
 
         if refund.status != RefundStatus::Approved {
             panic!("refund not approved");
+        }
+
+        // Check refund deadline has not passed
+        let now = env.ledger().timestamp();
+        if now > refund.deadline {
+            panic!("refund deadline has passed");
         }
 
         let token_client = token::Client::new(&env, &refund.token);

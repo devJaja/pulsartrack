@@ -45,6 +45,8 @@ pub struct DataRequest {
 #[contracttype]
 pub enum DataKey {
     Admin,
+    PendingAdmin,
+    Verifier,           // Trusted ZKP verifier address
     RequestCounter,
     Consent(Address),
     Proof(BytesN<32>),
@@ -73,6 +75,20 @@ impl PrivacyLayerContract {
         env.storage()
             .instance()
             .set(&DataKey::RequestCounter, &0u64);
+        // Initialize with no verifier - must be set separately for security
+        env.storage().instance().set(&DataKey::Verifier, &None::<Address>);
+    }
+
+    pub fn set_verifier(env: Env, admin: Address, verifier: Option<Address>) {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        admin.require_auth();
+        let stored_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        if admin != stored_admin {
+            panic!("unauthorized");
+        }
+        env.storage().instance().set(&DataKey::Verifier, &verifier);
     }
 
     pub fn set_consent(
@@ -179,10 +195,20 @@ impl PrivacyLayerContract {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-        admin.require_auth();
-        let stored_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        if admin != stored_admin {
-            panic!("unauthorized");
+        
+        // Check if a verifier is configured - if so, only verifier can verify
+        let verifier: Option<Address> = env.storage().instance().get(&DataKey::Verifier).unwrap_or(None);
+        if let Some(v) = verifier {
+            // If verifier is set, only the verifier can verify proofs
+            if admin != v {
+                panic!("unauthorized: only designated verifier can verify proofs");
+            }
+        } else {
+            // Fallback to admin if no verifier is set (for backwards compatibility)
+            let stored_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+            if admin != stored_admin {
+                panic!("unauthorized");
+            }
         }
 
         let mut proof: AnonymousSegmentProof = env
@@ -210,12 +236,14 @@ impl PrivacyLayerContract {
             .persistent()
             .get::<DataKey, PrivacyConsent>(&DataKey::Consent(user))
         {
+            // Check if consent has expired
             if let Some(expires) = consent.expires_at {
                 if expires <= env.ledger().timestamp() {
                     return false;
                 }
             }
 
+            // Check consent type
             if consent_type == String::from_str(&env, "targeted_ads") {
                 consent.targeted_ads
             } else if consent_type == String::from_str(&env, "analytics") {
@@ -230,6 +258,14 @@ impl PrivacyLayerContract {
         } else {
             false
         }
+    }
+
+    /// Get the verifier address (for transparency)
+    pub fn get_verifier(env: Env) -> Option<Address> {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        env.storage().instance().get(&DataKey::Verifier)
     }
 
     pub fn get_consent(env: Env, user: Address) -> Option<PrivacyConsent> {

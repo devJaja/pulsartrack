@@ -50,6 +50,7 @@ const INSTANCE_BUMP_AMOUNT: u32 = 86_400;
 const PERSISTENT_LIFETIME_THRESHOLD: u32 = 120_960;
 const PERSISTENT_BUMP_AMOUNT: u32 = 1_051_200;
 const MAX_CONSENSUS_ATTESTERS: u32 = 50;
+const MAX_DEVIATION_BPS: u32 = 5000; // 50% maximum deviation (5000 basis points = 50%)
 
 #[contract]
 pub struct PerformanceOracleContract;
@@ -244,6 +245,12 @@ impl PerformanceOracleContract {
         let mut sum_fraud_rate: u64 = 0;
         let mut sum_quality_score: u64 = 0;
 
+        // Track min/max for variance check
+        let mut min_fraud_rate: u32 = u32::MAX;
+        let mut max_fraud_rate: u32 = 0;
+        let mut min_quality_score: u32 = u32::MAX;
+        let mut max_quality_score: u32 = 0;
+
         for i in 0..total_attesters {
             let attester: Address = env
                 .storage()
@@ -261,6 +268,20 @@ impl PerformanceOracleContract {
             sum_clicks = sum_clicks.saturating_add(attestation.clicks_verified);
             sum_fraud_rate = sum_fraud_rate.saturating_add(attestation.fraud_rate as u64);
             sum_quality_score = sum_quality_score.saturating_add(attestation.quality_score as u64);
+
+            // Track min/max for variance check
+            if attestation.fraud_rate < min_fraud_rate {
+                min_fraud_rate = attestation.fraud_rate;
+            }
+            if attestation.fraud_rate > max_fraud_rate {
+                max_fraud_rate = attestation.fraud_rate;
+            }
+            if attestation.quality_score < min_quality_score {
+                min_quality_score = attestation.quality_score;
+            }
+            if attestation.quality_score > max_quality_score {
+                max_quality_score = attestation.quality_score;
+            }
         }
 
         // Calculate averages
@@ -270,6 +291,37 @@ impl PerformanceOracleContract {
         let avg_fraud_rate = (sum_fraud_rate / total_attesters_u64).min(u32::MAX as u64) as u32;
         let avg_quality_score =
             (sum_quality_score / total_attesters_u64).min(u32::MAX as u64) as u32;
+
+        // Variance check: reject if values are too divergent
+        // Using median-absolute-deviation style check: max - min > tolerance
+        let fraud_deviation_bps = if avg_fraud_rate > 0 {
+            ((max_fraud_rate - min_fraud_rate) as u64 * 10000 / avg_fraud_rate as u64) as u32
+        } else {
+            0
+        };
+        
+        let quality_deviation_bps = if avg_quality_score > 0 {
+            ((max_quality_score - min_quality_score) as u64 * 10000 / avg_quality_score as u64) as u32
+        } else {
+            0
+        };
+
+        if fraud_deviation_bps > MAX_DEVIATION_BPS {
+            // Log the variance issue but don't panic - just don't build consensus
+            env.events().publish(
+                (symbol_short!("oracle"), symbol_short!("variance")),
+                (campaign_id, fraud_deviation_bps),
+            );
+            return;
+        }
+
+        if quality_deviation_bps > MAX_DEVIATION_BPS {
+            env.events().publish(
+                (symbol_short!("oracle"), symbol_short!("variance")),
+                (campaign_id, quality_deviation_bps),
+            );
+            return;
+        }
 
         let consensus = OracleConsensus {
             campaign_id,
