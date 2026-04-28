@@ -2,7 +2,7 @@
 //! Manages wrapped tokens from other chains for use in PulsarTrack campaigns on Stellar.
 
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, String};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Env, String};
 
 #[contracttype]
 #[derive(Clone)]
@@ -160,18 +160,9 @@ impl WrappedTokenContract {
             panic!("token not active");
         }
 
-        // Mint stellar-side tokens
-        // NOTE: This would use the token contract's mint function in production
-        // For now, we track the internal balance
-        let key = DataKey::UserBalance(symbol.clone(), recipient.clone());
-        let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-        let new_balance = current.checked_add(amount).expect("balance overflow");
-        env.storage().persistent().set(&key, &new_balance);
-        env.storage().persistent().extend_ttl(
-            &key,
-            PERSISTENT_LIFETIME_THRESHOLD,
-            PERSISTENT_BUMP_AMOUNT,
-        );
+        // Mint stellar-side tokens using the actual token contract
+        let stellar_asset_client = token::Client::new(&env, &wrapped.stellar_token);
+        stellar_asset_client.mint(&recipient, &amount);
 
         wrapped.total_wrapped = wrapped
             .total_wrapped
@@ -244,22 +235,23 @@ impl WrappedTokenContract {
             panic!("amount must be positive");
         }
 
-        let key = DataKey::UserBalance(symbol.clone(), user.clone());
-        let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-
-        let new_balance = current.checked_sub(amount).expect("insufficient balance");
-        env.storage().persistent().set(&key, &new_balance);
-        env.storage().persistent().extend_ttl(
-            &key,
-            PERSISTENT_LIFETIME_THRESHOLD,
-            PERSISTENT_BUMP_AMOUNT,
-        );
-
         let mut wrapped: WrappedToken = env
             .storage()
             .persistent()
             .get(&DataKey::WrappedToken(symbol.clone()))
             .expect("token not registered");
+
+        // Check user's balance in the actual token contract
+        let stellar_asset_client = token::Client::new(&env, &wrapped.stellar_token);
+        let current_balance = stellar_asset_client.balance(&user);
+        
+        if current_balance < amount {
+            panic!("insufficient balance");
+        }
+
+        if amount > wrapped.total_wrapped {
+            panic!("burn amount exceeds total wrapped supply");
+        }
 
         wrapped.total_wrapped = wrapped
             .total_wrapped

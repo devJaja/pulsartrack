@@ -286,8 +286,8 @@ impl AuctionEngineContract {
             panic!("auction still running");
         }
 
-        if auction.status == AuctionStatus::Settled || auction.status == AuctionStatus::Cancelled {
-            panic!("auction already settled or cancelled");
+        if auction.status != AuctionStatus::Open {
+            panic!("auction not open");
         }
 
         let winning = auction.winning_bid;
