@@ -246,8 +246,9 @@ impl MultisigTreasuryContract {
         }
 
         let token_client = token::Client::new(&env, &tx.token);
-        token_client.transfer(&env.current_contract_address(), &tx.recipient, &tx.amount);
 
+        // Apply Checks → Effects → Interactions (CEI)
+        // Update state BEFORE external call to prevent re-entrancy/double execution
         tx.status = TxStatus::Executed;
         tx.executed_at = Some(env.ledger().timestamp());
         let _ttl_key = DataKey::Tx(tx_id);
@@ -257,6 +258,9 @@ impl MultisigTreasuryContract {
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
         );
+
+        // Perform external call AFTER state update
+        token_client.transfer(&env.current_contract_address(), &tx.recipient, &tx.amount);
 
         env.events().publish(
             (symbol_short!("treasury"), symbol_short!("executed")),
