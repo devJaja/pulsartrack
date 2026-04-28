@@ -357,13 +357,13 @@ impl GovernanceDaoContract {
 
         let quorum_met = (total_votes * 10_000) >= (total_supply * (proposal.quorum_bps as i128));
 
-        let for_pct = if total_votes > 0 {
-            (proposal.votes_for * 100) / total_votes
+        let for_bps = if total_votes > 0 {
+            (proposal.votes_for * 10_000) / total_votes
         } else {
             0
         };
 
-        proposal.status = if quorum_met && for_pct as u32 >= proposal.threshold_pct {
+        proposal.status = if quorum_met && for_bps as u32 >= proposal.threshold_pct * 100 {
             ProposalStatus::Passed
         } else if !quorum_met {
             ProposalStatus::Rejected
@@ -423,6 +423,10 @@ impl GovernanceDaoContract {
         // Any execution side effects (e.g. calling proposal.target_contract)
         // must be placed here — after the status has been committed — so they
         // cannot be replayed if they succeed but the status write were to fail.
+        env.events().publish(
+            (symbol_short!("proposal"), symbol_short!("executed")),
+            (proposal_id, proposal.target_contract),
+        );
     }
 
     /// Unlock tokens after proposal is finalized

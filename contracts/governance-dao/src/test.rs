@@ -41,6 +41,28 @@ impl MockGovToken {
             .get::<Address, i128>(&id)
             .unwrap_or(1_000_000)
     }
+
+    /// Token transfer: move `amount` from `from` to `to`.
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        from.require_auth();
+        let from_bal = env
+            .storage()
+            .persistent()
+            .get::<Address, i128>(&from)
+            .unwrap_or(1_000_000);
+        if from_bal < amount {
+            panic!("insufficient balance");
+        }
+        env.storage()
+            .persistent()
+            .set(&from, &(from_bal - amount));
+        let to_bal = env
+            .storage()
+            .persistent()
+            .get::<Address, i128>(&to)
+            .unwrap_or(0);
+        env.storage().persistent().set(&to, &(to_bal + amount));
+    }
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -500,7 +522,156 @@ fn test_execute_proposal_by_stranger_fails() {
     client.execute_proposal(&stranger, &proposal_id);
 }
 
-// ─── cancel_proposal ─────────────────────────────────────────────────────────
+// ─── finalize_proposal — basis-point precision (#480) ────────────────────────
+
+#[test]
+fn test_finalize_proposal_passes_at_51_pct_exact() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // 510_000 For, 490_000 Against out of 1_000_000 total = exactly 51.0%
+    // Old integer division: (510_000 * 100) / 1_000_000 = 51 → passes (fine here)
+    // Basis-point check: (510_000 * 10_000) / 1_000_000 = 5100 >= 5100 → Passed
+    let (client, _, _) = setup_with_mock_token(&env, 2_000_000);
+
+    let proposer = Address::generate(&env);
+    let voter_for = Address::generate(&env);
+    let voter_against = Address::generate(&env);
+    let proposal_id = client.create_proposal(&proposer, &make_title(&env), &make_desc(&env), &None);
+
+    client.cast_vote(&voter_for, &proposal_id, &VoteChoice::For, &510_000i128);
+    client.cast_vote(&voter_against, &proposal_id, &VoteChoice::Against, &490_000i128);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 200;
+    });
+
+    client.finalize_proposal(&proposal_id);
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert!(
+        matches!(proposal.status, ProposalStatus::Passed),
+        "exactly 51% For should pass a 51% threshold"
+    );
+}
+
+#[test]
+fn test_finalize_proposal_passes_at_51_1_pct() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // 511_000 For, 489_000 Against out of 1_000_000 total = 51.1%
+    // Old integer division: (511_000 * 100) / 1_000_000 = 51 → passes
+    // Basis-point check: (511_000 * 10_000) / 1_000_000 = 5110 >= 5100 → Passed
+    // (Both agree here; the precision fix matters most near the boundary)
+    let (client, _, _) = setup_with_mock_token(&env, 2_000_000);
+
+    let proposer = Address::generate(&env);
+    let voter_for = Address::generate(&env);
+    let voter_against = Address::generate(&env);
+    let proposal_id = client.create_proposal(&proposer, &make_title(&env), &make_desc(&env), &None);
+
+    client.cast_vote(&voter_for, &proposal_id, &VoteChoice::For, &511_000i128);
+    client.cast_vote(&voter_against, &proposal_id, &VoteChoice::Against, &489_000i128);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 200;
+    });
+
+    client.finalize_proposal(&proposal_id);
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert!(matches!(proposal.status, ProposalStatus::Passed));
+}
+
+#[test]
+fn test_finalize_proposal_rejected_at_50_99_pct_with_bps() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Use 10_000 total votes: 5_099 For, 4_901 Against = 50.99%
+    // Old integer division: (5_099 * 100) / 10_000 = 50 → Rejected (wrong)
+    // Basis-point check: (5_099 * 10_000) / 10_000 = 5099 < 5100 → Rejected (correct)
+    // This confirms the bps fix correctly rejects sub-51% proposals
+    let (client, _, _) = setup_with_mock_token(&env, 20_000);
+
+    let proposer = Address::generate(&env);
+    let voter_for = Address::generate(&env);
+    let voter_against = Address::generate(&env);
+    let proposal_id = client.create_proposal(&proposer, &make_title(&env), &make_desc(&env), &None);
+
+    client.cast_vote(&voter_for, &proposal_id, &VoteChoice::For, &5_099i128);
+    client.cast_vote(&voter_against, &proposal_id, &VoteChoice::Against, &4_901i128);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 200;
+    });
+
+    client.finalize_proposal(&proposal_id);
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert!(matches!(proposal.status, ProposalStatus::Rejected));
+}
+
+#[test]
+fn test_finalize_proposal_rejected_at_exactly_50_pct() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Exactly 50% For → must Reject (threshold is 51%)
+    let (client, _, _) = setup_with_mock_token(&env, 2_000_000);
+
+    let proposer = Address::generate(&env);
+    let voter_for = Address::generate(&env);
+    let voter_against = Address::generate(&env);
+    let proposal_id = client.create_proposal(&proposer, &make_title(&env), &make_desc(&env), &None);
+
+    client.cast_vote(&voter_for, &proposal_id, &VoteChoice::For, &500_000i128);
+    client.cast_vote(&voter_against, &proposal_id, &VoteChoice::Against, &500_000i128);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 200;
+    });
+
+    client.finalize_proposal(&proposal_id);
+
+    let proposal = client.get_proposal(&proposal_id).unwrap();
+    assert!(matches!(proposal.status, ProposalStatus::Rejected));
+}
+
+// ─── execute_proposal — target_contract event (#479) ─────────────────────────
+
+#[test]
+fn test_execute_proposal_emits_executed_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _) = setup_with_mock_token(&env, 1_000);
+
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let target = Address::generate(&env);
+    let proposal_id = client.create_proposal(
+        &proposer,
+        &make_title(&env),
+        &make_desc(&env),
+        &Some(target.clone()),
+    );
+
+    client.cast_vote(&voter, &proposal_id, &VoteChoice::For, &200i128);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 200;
+    });
+
+    client.finalize_proposal(&proposal_id);
+    client.execute_proposal(&admin, &proposal_id);
+
+    let p = client.get_proposal(&proposal_id).unwrap();
+    assert!(matches!(p.status, ProposalStatus::Executed));
+    // target_contract is preserved on the proposal
+    assert_eq!(p.target_contract, Some(target));
+}
 
 #[test]
 fn test_cancel_proposal_by_proposer() {

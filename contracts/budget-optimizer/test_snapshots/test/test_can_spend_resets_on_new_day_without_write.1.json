@@ -223,6 +223,14 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "advertiser"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "budget_remainder"
                       },
                       "val": {

@@ -8,6 +8,7 @@ use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, E
 #[derive(Clone)]
 pub struct BudgetAllocation {
     pub campaign_id: u64,
+    pub advertiser: Address,
     pub total_budget: i128,
     pub daily_budget: i128,
     pub hourly_budget: i128,
@@ -97,8 +98,21 @@ impl BudgetOptimizerContract {
             panic!("daily budget exceeds total");
         }
 
+        // Ownership check: if an allocation already exists, only the original
+        // advertiser may overwrite it.
+        if let Some(existing) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, BudgetAllocation>(&DataKey::Allocation(campaign_id))
+        {
+            if existing.advertiser != advertiser {
+                panic!("unauthorized");
+            }
+        }
+
         let allocation = BudgetAllocation {
             campaign_id,
+            advertiser: advertiser.clone(),
             total_budget,
             daily_budget,
             hourly_budget: daily_budget / 24,
@@ -207,6 +221,13 @@ impl BudgetOptimizerContract {
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         admin.require_auth();
+        let stored_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        if admin != stored_admin {
+            panic!("unauthorized");
+        }
+        if amount <= 0 {
+            panic!("amount must be positive");
+        }
 
         let mut allocation: BudgetAllocation = env
             .storage()

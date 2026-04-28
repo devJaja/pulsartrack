@@ -276,3 +276,130 @@ fn test_hourly_budget_remainder_after_optimization() {
         alloc.daily_budget
     );
 }
+
+// ─── record_spend — stored-admin validation (#481) ───────────────────────────
+
+#[test]
+#[should_panic(expected = "unauthorized")]
+fn test_record_spend_stranger_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _, _) = setup(&env);
+    let advertiser = Address::generate(&env);
+    let stranger = Address::generate(&env);
+    c.set_budget_allocation(
+        &advertiser,
+        &1u64,
+        &100_000i128,
+        &10_000i128,
+        &OptimizationMode::ManualCpc,
+        &500i128,
+        &100u32,
+    );
+    c.record_spend(&stranger, &1u64, &5_000i128);
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_record_spend_zero_amount_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin, _) = setup(&env);
+    let advertiser = Address::generate(&env);
+    c.set_budget_allocation(
+        &advertiser,
+        &1u64,
+        &100_000i128,
+        &10_000i128,
+        &OptimizationMode::ManualCpc,
+        &500i128,
+        &100u32,
+    );
+    c.record_spend(&admin, &1u64, &0i128);
+}
+
+#[test]
+#[should_panic(expected = "amount must be positive")]
+fn test_record_spend_negative_amount_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin, _) = setup(&env);
+    let advertiser = Address::generate(&env);
+    c.set_budget_allocation(
+        &advertiser,
+        &1u64,
+        &100_000i128,
+        &10_000i128,
+        &OptimizationMode::ManualCpc,
+        &500i128,
+        &100u32,
+    );
+    c.record_spend(&admin, &1u64, &-1_000i128);
+}
+
+// ─── set_budget_allocation — ownership check (#482) ──────────────────────────
+
+#[test]
+#[should_panic(expected = "unauthorized")]
+fn test_set_budget_allocation_wrong_advertiser_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _, _) = setup(&env);
+    let advertiser = Address::generate(&env);
+    let attacker = Address::generate(&env);
+
+    // Original advertiser creates the allocation
+    c.set_budget_allocation(
+        &advertiser,
+        &1u64,
+        &100_000i128,
+        &10_000i128,
+        &OptimizationMode::ManualCpc,
+        &500i128,
+        &100u32,
+    );
+
+    // Attacker tries to overwrite it
+    c.set_budget_allocation(
+        &attacker,
+        &1u64,
+        &1i128,
+        &1i128,
+        &OptimizationMode::ManualCpc,
+        &0i128,
+        &0u32,
+    );
+}
+
+#[test]
+fn test_set_budget_allocation_owner_can_update() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _, _) = setup(&env);
+    let advertiser = Address::generate(&env);
+
+    c.set_budget_allocation(
+        &advertiser,
+        &1u64,
+        &100_000i128,
+        &10_000i128,
+        &OptimizationMode::ManualCpc,
+        &500i128,
+        &100u32,
+    );
+
+    // Same advertiser updates their own allocation
+    c.set_budget_allocation(
+        &advertiser,
+        &1u64,
+        &200_000i128,
+        &20_000i128,
+        &OptimizationMode::AutoCpm,
+        &0i128,
+        &0u32,
+    );
+
+    let alloc = c.get_allocation(&1u64).unwrap();
+    assert_eq!(alloc.total_budget, 200_000);
+    assert_eq!(alloc.daily_budget, 20_000);
+}
