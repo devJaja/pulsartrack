@@ -239,9 +239,7 @@ impl MultisigTreasuryContract {
             panic!("transaction expired");
         }
 
-        let token_client = token::Client::new(&env, &tx.token);
-        token_client.transfer(&env.current_contract_address(), &tx.recipient, &tx.amount);
-
+        // CEI: update state before token transfer to prevent re-entrancy
         tx.status = TxStatus::Executed;
         tx.executed_at = Some(env.ledger().timestamp());
         let _ttl_key = DataKey::Tx(tx_id);
@@ -251,6 +249,9 @@ impl MultisigTreasuryContract {
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
         );
+
+        let token_client = token::Client::new(&env, &tx.token);
+        token_client.transfer(&env.current_contract_address(), &tx.recipient, &tx.amount);
 
         env.events().publish(
             (symbol_short!("treasury"), symbol_short!("executed")),
