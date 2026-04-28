@@ -116,3 +116,37 @@ fn test_is_oracle_authorized_false() {
     let (c, _) = setup(&env);
     assert!(!c.is_oracle_authorized(&Address::generate(&env)));
 }
+
+#[test]
+#[should_panic(expected = "invalid campaign id")]
+fn test_update_performance_invalid_id() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin) = setup(&env);
+    let oracle = Address::generate(&env);
+    c.add_oracle(&admin, &oracle);
+    c.update_performance(&oracle, &0u64, &1000u64, &50u64, &5u64, &10u32);
+}
+
+#[test]
+#[should_panic(expected = "fraud score must be 0-100")]
+fn test_update_performance_invalid_fraud() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin) = setup(&env);
+    let oracle = Address::generate(&env);
+    c.add_oracle(&admin, &oracle);
+    c.update_performance(&oracle, &1u64, &1000u64, &50u64, &5u64, &101u32);
+}
+
+#[test]
+#[should_panic(expected = "clicks cannot exceed impressions")]
+fn test_update_performance_invalid_conversion() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin) = setup(&env);
+    let oracle = Address::generate(&env);
+    c.add_oracle(&admin, &oracle);
+    // 50 impressions, 100 clicks -> impossible
+    c.update_performance(&oracle, &1u64, &50u64, &100u64, &5u64, &10u32);
+}

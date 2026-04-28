@@ -157,6 +157,16 @@ impl OracleIntegrationContract {
         oracle.require_auth();
         Self::_require_oracle(&env, &oracle);
 
+        if campaign_id == 0 {
+            panic!("invalid campaign id");
+        }
+        if fraud_score > 100 {
+            panic!("fraud score must be 0-100");
+        }
+        if clicks > impressions {
+            panic!("clicks cannot exceed impressions");
+        }
+
         let data = PerformanceData {
             campaign_id,
             impressions,

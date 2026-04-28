@@ -153,6 +153,26 @@ fn test_process_payment() {
 }
 
 #[test]
+fn test_get_daily_volume_tracking() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _, token_admin, token_addr) = setup(&env);
+    client.add_token(&admin, &token_addr, &1_000i128, &100_000_000i128);
+
+    let payer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    mint(&env, &token_addr, &token_admin, &payer, 1_000_000);
+
+    assert_eq!(client.get_daily_volume(&token_addr), 0);
+
+    client.process_payment(&payer, &recipient, &token_addr, &10_000i128);
+    assert_eq!(client.get_daily_volume(&token_addr), 10_000);
+
+    client.process_payment(&payer, &recipient, &token_addr, &5_000i128);
+    assert_eq!(client.get_daily_volume(&token_addr), 15_000);
+}
+
+#[test]
 fn test_process_payment_fee_split() {
     let env = Env::default();
     env.mock_all_auths();
@@ -417,6 +437,12 @@ fn test_admin_transfer_flow() {
     let new_admin = Address::generate(&env);
 
     c.propose_admin(&admin, &new_admin);
+    
+    // Advance sequence to satisfy time lock
+    env.ledger().with_mut(|li| {
+        li.sequence_number += 17281;
+    });
+
     c.accept_admin(&new_admin);
 
     // Verify new admin can perform admin actions
