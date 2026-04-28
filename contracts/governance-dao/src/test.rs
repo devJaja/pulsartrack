@@ -763,6 +763,54 @@ fn test_get_proposal_count_initial_zero() {
     assert_eq!(client.get_proposal_count(), 0);
 }
 
+// ─── TTL double-vote regression (#477) ───────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "already voted")]
+fn test_double_vote_after_ttl_window_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Use a long voting period (300 ledgers) so the proposal stays active
+    // well past the old 15-day / 259_200-ledger TTL window.
+    let admin = Address::generate(&env);
+    let token_addr = deploy_mock_gov_token(&env, 10_000_000);
+    let contract_id = env.register_contract(None, GovernanceDaoContract);
+    let client = GovernanceDaoContractClient::new(&env, &contract_id);
+    client.initialize(
+        &admin,
+        &token_addr,
+        &300_000u32, // voting period: 300_000 ledgers (~35 days)
+        &1_000u32,
+        &51u32,
+        &0i128,
+    );
+
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+
+    let proposal_id =
+        client.create_proposal(&proposer, &make_title(&env), &make_desc(&env), &None);
+
+    // Voter A casts their vote at ledger 0
+    client.cast_vote(&voter, &proposal_id, &VoteChoice::For, &1_000i128);
+    assert!(client.has_voted(&proposal_id, &voter));
+
+    // Advance the ledger past the OLD persistent bump amount (259_200 ≈ 15 days).
+    // We step in increments smaller than INSTANCE_BUMP_AMOUNT (86_400) and make
+    // a read-only call between each jump to keep the contract instance alive.
+    for seq in [80_000u32, 160_000, 240_000, 260_000] {
+        env.ledger().with_mut(|li| {
+            li.sequence_number = seq;
+        });
+        // Read-only call bumps the instance TTL so the contract stays alive.
+        let _ = client.get_proposal(&proposal_id);
+    }
+
+    // Voter A tries to vote again — must be rejected
+    client.cast_vote(&voter, &proposal_id, &VoteChoice::For, &1_000i128);
+}
+
 // ─── proposer minimum token enforcement (#76) ────────────────────────────────
 
 /// Deploy MockGovToken with balance support and initialize the DAO with a

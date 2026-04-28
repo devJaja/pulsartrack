@@ -88,8 +88,8 @@ pub enum DataKey {
 
 const INSTANCE_LIFETIME_THRESHOLD: u32 = 17_280;
 const INSTANCE_BUMP_AMOUNT: u32 = 86_400;
-const PERSISTENT_LIFETIME_THRESHOLD: u32 = 34_560;
-const PERSISTENT_BUMP_AMOUNT: u32 = 259_200;
+const PERSISTENT_LIFETIME_THRESHOLD: u32 = 120_960; // ~7 days
+const PERSISTENT_BUMP_AMOUNT: u32 = 1_051_200; // ~61 days
 
 #[contract]
 pub struct GovernanceDaoContract;
