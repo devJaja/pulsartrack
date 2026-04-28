@@ -97,6 +97,16 @@ impl OracleIntegrationContract {
         env.storage()
             .persistent()
             .remove(&DataKey::AuthorizedOracle(oracle));
+
+        // Decrement OracleCount with floor of 0 to guard against underflow
+        let count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::OracleCount)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::OracleCount, &count.saturating_sub(1));
     }
 
     pub fn update_price(

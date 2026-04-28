@@ -44,6 +44,7 @@ pub enum DataKey {
     TxCounter,
     Tx(u64),
     TxApproval(u64, Address),
+    TxRejection(u64, Address),
 }
 
 const INSTANCE_LIFETIME_THRESHOLD: u32 = 17_280;
@@ -269,6 +270,22 @@ impl MultisigTreasuryContract {
             panic!("not a signer");
         }
 
+        // Prevent double-voting: signer cannot both approve and reject the same tx
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::TxApproval(tx_id, signer.clone()))
+        {
+            panic!("already voted");
+        }
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::TxRejection(tx_id, signer.clone()))
+        {
+            panic!("already voted");
+        }
+
         let mut tx: TreasuryTx = env
             .storage()
             .persistent()
@@ -292,6 +309,18 @@ impl MultisigTreasuryContract {
         if max_possible_approvals < required {
             tx.status = TxStatus::Rejected;
         }
+
+        // Record the rejection to prevent double-voting
+        env.storage()
+            .persistent()
+            .set(&DataKey::TxRejection(tx_id, signer.clone()), &true);
+        env.storage()
+            .persistent()
+            .extend_ttl(
+                &DataKey::TxRejection(tx_id, signer),
+                PERSISTENT_LIFETIME_THRESHOLD,
+                PERSISTENT_BUMP_AMOUNT,
+            );
 
         let _ttl_key = DataKey::Tx(tx_id);
         env.storage().persistent().set(&_ttl_key, &tx);
