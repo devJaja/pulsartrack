@@ -36,7 +36,6 @@ pub struct TokenConfig {
     pub enabled: bool,
     pub min_amount: i128,
     pub daily_limit: i128,
-    pub daily_volume: i128,
 }
 
 #[contracttype]
@@ -130,7 +129,6 @@ impl PaymentProcessorContract {
             enabled: true,
             min_amount,
             daily_limit,
-            daily_volume: 0,
         };
 
         let _ttl_key = DataKey::TokenConfig(token);
@@ -339,6 +337,14 @@ impl PaymentProcessorContract {
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         env.storage().persistent().get(&DataKey::TokenConfig(token))
+    }
+
+    pub fn get_daily_volume(env: Env, token: Address) -> i128 {
+        let day = env.ledger().timestamp() / SECONDS_PER_DAY;
+        env.storage()
+            .temporary()
+            .get(&DataKey::DailyVolume(token, day))
+            .unwrap_or(0)
     }
 
     // ============================================================

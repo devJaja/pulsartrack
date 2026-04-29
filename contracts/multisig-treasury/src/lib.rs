@@ -44,6 +44,7 @@ pub enum DataKey {
     TxCounter,
     Tx(u64),
     TxApproval(u64, Address),
+    TxRejection(u64, Address),
 }
 
 const INSTANCE_LIFETIME_THRESHOLD: u32 = 17_280;
@@ -178,6 +179,11 @@ impl MultisigTreasuryContract {
             panic!("tx not pending");
         }
 
+        // Prevent proposer from approving their own transaction
+        if signer == tx.proposer {
+            panic!("proposer cannot approve their own transaction");
+        }
+
         if env.ledger().timestamp() > tx.expires_at {
             tx.status = TxStatus::Expired;
             let _ttl_key = DataKey::Tx(tx_id);
@@ -239,7 +245,10 @@ impl MultisigTreasuryContract {
             panic!("transaction expired");
         }
 
-        // CEI: update state before token transfer to prevent re-entrancy
+        let token_client = token::Client::new(&env, &tx.token);
+
+        // Apply Checks → Effects → Interactions (CEI)
+        // Update state BEFORE external call to prevent re-entrancy/double execution
         tx.status = TxStatus::Executed;
         tx.executed_at = Some(env.ledger().timestamp());
         let _ttl_key = DataKey::Tx(tx_id);
@@ -250,7 +259,7 @@ impl MultisigTreasuryContract {
             PERSISTENT_BUMP_AMOUNT,
         );
 
-        let token_client = token::Client::new(&env, &tx.token);
+        // Perform external call AFTER state update
         token_client.transfer(&env.current_contract_address(), &tx.recipient, &tx.amount);
 
         env.events().publish(
@@ -268,6 +277,22 @@ impl MultisigTreasuryContract {
         let signers: Vec<Address> = env.storage().instance().get(&DataKey::Signers).unwrap();
         if !signers.contains(&signer) {
             panic!("not a signer");
+        }
+
+        // Prevent double-voting: signer cannot both approve and reject the same tx
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::TxApproval(tx_id, signer.clone()))
+        {
+            panic!("already voted");
+        }
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::TxRejection(tx_id, signer.clone()))
+        {
+            panic!("already voted");
         }
 
         let mut tx: TreasuryTx = env
@@ -293,6 +318,18 @@ impl MultisigTreasuryContract {
         if max_possible_approvals < required {
             tx.status = TxStatus::Rejected;
         }
+
+        // Record the rejection to prevent double-voting
+        env.storage()
+            .persistent()
+            .set(&DataKey::TxRejection(tx_id, signer.clone()), &true);
+        env.storage()
+            .persistent()
+            .extend_ttl(
+                &DataKey::TxRejection(tx_id, signer),
+                PERSISTENT_LIFETIME_THRESHOLD,
+                PERSISTENT_BUMP_AMOUNT,
+            );
 
         let _ttl_key = DataKey::Tx(tx_id);
         env.storage().persistent().set(&_ttl_key, &tx);

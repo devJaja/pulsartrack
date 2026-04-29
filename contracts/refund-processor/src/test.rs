@@ -64,6 +64,32 @@ fn test_request_refund() {
 }
 
 #[test]
+#[should_panic(expected = "refund already pending for this campaign")]
+fn test_request_refund_duplicate_for_same_campaign_and_requester() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _, _, _) = setup(&env);
+    let requester = Address::generate(&env);
+
+    c.request_refund(&requester, &1u64, &50_000i128, &s(&env, "reason"));
+    c.request_refund(&requester, &1u64, &25_000i128, &s(&env, "duplicate"));
+}
+
+#[test]
+fn test_request_refund_allowed_after_rejection() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin, _, _) = setup(&env);
+    let requester = Address::generate(&env);
+
+    let first_id = c.request_refund(&requester, &1u64, &50_000i128, &s(&env, "reason"));
+    c.reject_refund(&admin, &first_id);
+
+    let second_id = c.request_refund(&requester, &1u64, &25_000i128, &s(&env, "new request"));
+    assert_eq!(second_id, 2);
+}
+
+#[test]
 fn test_approve_refund() {
     let env = Env::default();
     env.mock_all_auths();

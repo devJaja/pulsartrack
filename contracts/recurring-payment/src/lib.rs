@@ -182,13 +182,9 @@ impl RecurringPaymentContract {
             }
         }
 
-        // Require payer's auth for the transfer (unless caller is the payer)
-        if caller != recurring.payer {
-            recurring.payer.require_auth();
-        }
-
+        // Use SEP-41 allowance pattern for automated execution
         let token_client = token::Client::new(&env, &recurring.token);
-        token_client.transfer(&recurring.payer, &recurring.recipient, &recurring.amount);
+        token_client.transfer_from(&env.current_contract_address(), &recurring.payer, &recurring.recipient, &recurring.amount);
 
         recurring.total_payments += 1;
         recurring.last_payment = now;

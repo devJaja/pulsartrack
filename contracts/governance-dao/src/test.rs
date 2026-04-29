@@ -717,6 +717,79 @@ fn test_cancel_proposal_by_stranger_fails() {
     client.cancel_proposal(&stranger, &proposal_id);
 }
 
+#[test]
+#[should_panic(expected = "can only cancel active proposals")]
+fn test_cancel_passed_proposal_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _) = setup_with_mock_token(&env, 1_000);
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let proposal_id = client.create_proposal(&proposer, &make_title(&env), &make_desc(&env), &None);
+
+    client.cast_vote(&voter, &proposal_id, &VoteChoice::For, &200i128);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 200;
+    });
+
+    client.finalize_proposal(&proposal_id);
+
+    let p = client.get_proposal(&proposal_id).unwrap();
+    assert!(matches!(p.status, ProposalStatus::Passed));
+
+    // Must reject — proposal already Passed
+    client.cancel_proposal(&admin, &proposal_id);
+}
+
+#[test]
+#[should_panic(expected = "can only cancel active proposals")]
+fn test_cancel_executed_proposal_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, admin, _) = setup_with_mock_token(&env, 1_000);
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let proposal_id = client.create_proposal(&proposer, &make_title(&env), &make_desc(&env), &None);
+
+    client.cast_vote(&voter, &proposal_id, &VoteChoice::For, &200i128);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 200;
+    });
+
+    client.finalize_proposal(&proposal_id);
+    client.execute_proposal(&admin, &proposal_id);
+
+    let p = client.get_proposal(&proposal_id).unwrap();
+    assert!(matches!(p.status, ProposalStatus::Executed));
+
+    // Must reject — proposal already Executed
+    client.cancel_proposal(&admin, &proposal_id);
+}
+
+#[test]
+#[should_panic(expected = "can only cancel active proposals")]
+fn test_cancel_already_cancelled_proposal_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _, _) = setup(&env);
+    let proposer = Address::generate(&env);
+
+    let proposal_id = client.create_proposal(&proposer, &make_title(&env), &make_desc(&env), &None);
+
+    // First cancel succeeds (proposal is Active)
+    client.cancel_proposal(&proposer, &proposal_id);
+
+    let p = client.get_proposal(&proposal_id).unwrap();
+    assert!(matches!(p.status, ProposalStatus::Cancelled));
+
+    // Second cancel must reject — already Cancelled
+    client.cancel_proposal(&proposer, &proposal_id);
+}
+
 // ─── read-only helpers ────────────────────────────────────────────────────────
 
 #[test]
@@ -761,6 +834,54 @@ fn test_get_proposal_count_initial_zero() {
     let (client, _, _, _) = setup(&env);
 
     assert_eq!(client.get_proposal_count(), 0);
+}
+
+// ─── TTL double-vote regression (#477) ───────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "already voted")]
+fn test_double_vote_after_ttl_window_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Use a long voting period (300 ledgers) so the proposal stays active
+    // well past the old 15-day / 259_200-ledger TTL window.
+    let admin = Address::generate(&env);
+    let token_addr = deploy_mock_gov_token(&env, 10_000_000);
+    let contract_id = env.register_contract(None, GovernanceDaoContract);
+    let client = GovernanceDaoContractClient::new(&env, &contract_id);
+    client.initialize(
+        &admin,
+        &token_addr,
+        &300_000u32, // voting period: 300_000 ledgers (~35 days)
+        &1_000u32,
+        &51u32,
+        &0i128,
+    );
+
+    let proposer = Address::generate(&env);
+    let voter = Address::generate(&env);
+
+    let proposal_id =
+        client.create_proposal(&proposer, &make_title(&env), &make_desc(&env), &None);
+
+    // Voter A casts their vote at ledger 0
+    client.cast_vote(&voter, &proposal_id, &VoteChoice::For, &1_000i128);
+    assert!(client.has_voted(&proposal_id, &voter));
+
+    // Advance the ledger past the OLD persistent bump amount (259_200 ≈ 15 days).
+    // We step in increments smaller than INSTANCE_BUMP_AMOUNT (86_400) and make
+    // a read-only call between each jump to keep the contract instance alive.
+    for seq in [80_000u32, 160_000, 240_000, 260_000] {
+        env.ledger().with_mut(|li| {
+            li.sequence_number = seq;
+        });
+        // Read-only call bumps the instance TTL so the contract stays alive.
+        let _ = client.get_proposal(&proposal_id);
+    }
+
+    // Voter A tries to vote again — must be rejected
+    client.cast_vote(&voter, &proposal_id, &VoteChoice::For, &1_000i128);
 }
 
 // ─── proposer minimum token enforcement (#76) ────────────────────────────────

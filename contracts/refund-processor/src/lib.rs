@@ -48,6 +48,7 @@ pub enum DataKey {
     TokenAddress,
     RefundCounter,
     AutoRefundPeriod,
+    PendingRefund(u64, Address),
     Refund(u64),
     Campaign(u64),
 }
@@ -141,6 +142,9 @@ impl RefundProcessorContract {
 
         let _ttl_key = DataKey::Refund(refund_id);
         env.storage().persistent().set(&_ttl_key, &refund);
+        env.storage()
+            .persistent()
+            .set(&pending_refund_key, &refund_id);
         env.storage().persistent().extend_ttl(
             &_ttl_key,
             PERSISTENT_LIFETIME_THRESHOLD,
@@ -213,6 +217,9 @@ impl RefundProcessorContract {
 
         let _ttl_key = DataKey::Refund(refund_id);
         env.storage().persistent().set(&_ttl_key, &refund);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PendingRefund(refund.campaign_id, refund.requester.clone()));
         env.storage().persistent().extend_ttl(
             &_ttl_key,
             PERSISTENT_LIFETIME_THRESHOLD,
@@ -260,6 +267,9 @@ impl RefundProcessorContract {
         refund.status = RefundStatus::Processed;
         let _ttl_key = DataKey::Refund(refund_id);
         env.storage().persistent().set(&_ttl_key, &refund);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PendingRefund(refund.campaign_id, refund.requester.clone()));
         env.storage().persistent().extend_ttl(
             &_ttl_key,
             PERSISTENT_LIFETIME_THRESHOLD,

@@ -97,6 +97,16 @@ impl OracleIntegrationContract {
         env.storage()
             .persistent()
             .remove(&DataKey::AuthorizedOracle(oracle));
+
+        // Decrement OracleCount with floor of 0 to guard against underflow
+        let count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::OracleCount)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::OracleCount, &count.saturating_sub(1));
     }
 
     pub fn update_price(
@@ -156,6 +166,16 @@ impl OracleIntegrationContract {
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         oracle.require_auth();
         Self::_require_oracle(&env, &oracle);
+
+        if campaign_id == 0 {
+            panic!("invalid campaign id");
+        }
+        if fraud_score > 100 {
+            panic!("fraud_score must be 0-100");
+        }
+        if clicks > impressions {
+            panic!("clicks cannot exceed impressions");
+        }
 
         let data = PerformanceData {
             campaign_id,
