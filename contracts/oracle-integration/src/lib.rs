@@ -171,7 +171,7 @@ impl OracleIntegrationContract {
             panic!("invalid campaign id");
         }
         if fraud_score > 100 {
-            panic!("fraud score must be 0-100");
+            panic!("fraud_score must be 0-100");
         }
         if clicks > impressions {
             panic!("clicks cannot exceed impressions");

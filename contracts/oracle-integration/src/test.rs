@@ -63,6 +63,29 @@ fn test_remove_oracle() {
 }
 
 #[test]
+fn test_remove_oracle_decrements_count() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let id = env.register_contract(None, OracleIntegrationContract);
+    let c = OracleIntegrationContractClient::new(&env, &id);
+    c.initialize(&admin);
+
+    let oracle = Address::generate(&env);
+    c.add_oracle(&admin, &oracle);
+    c.remove_oracle(&admin, &oracle);
+    c.remove_oracle(&admin, &oracle);
+
+    let count: u32 = env.as_contract(&id, || {
+        env.storage()
+            .instance()
+            .get(&DataKey::OracleCount)
+            .unwrap()
+    });
+    assert_eq!(count, 0);
+}
+
+#[test]
 #[should_panic(expected = "unauthorized")]
 fn test_add_oracle_unauthorized() {
     let env = Env::default();
@@ -129,7 +152,7 @@ fn test_update_performance_invalid_id() {
 }
 
 #[test]
-#[should_panic(expected = "fraud score must be 0-100")]
+#[should_panic(expected = "fraud_score must be 0-100")]
 fn test_update_performance_invalid_fraud() {
     let env = Env::default();
     env.mock_all_auths();
