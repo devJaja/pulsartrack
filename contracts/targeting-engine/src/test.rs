@@ -120,3 +120,15 @@ fn test_get_targeting_nonexistent() {
     let (c, _) = setup(&env);
     assert!(c.get_targeting(&999u64).is_none());
 }
+
+#[test]
+#[should_panic(expected = "score must be 0-1000")]
+fn test_compute_score_rejects_above_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin) = setup(&env);
+    let oracle = Address::generate(&env);
+    let pub1 = Address::generate(&env);
+    c.add_oracle(&admin, &oracle);
+    c.compute_score(&oracle, &1u64, &pub1, &5001u32, &s(&env, "match"));
+}
