@@ -132,3 +132,15 @@ fn test_compute_score_rejects_above_max() {
     c.add_oracle(&admin, &oracle);
     c.compute_score(&oracle, &1u64, &pub1, &5001u32, &s(&env, "match"));
 }
+
+#[test]
+#[should_panic(expected = "unauthorized: campaign belongs to a different advertiser")]
+fn test_set_targeting_rejects_wrong_advertiser() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _) = setup(&env);
+    let advertiser_a = Address::generate(&env);
+    let advertiser_b = Address::generate(&env);
+    c.set_targeting(&advertiser_a, &42u64, &default_params(&env));
+    c.set_targeting(&advertiser_b, &42u64, &default_params(&env));
+}
