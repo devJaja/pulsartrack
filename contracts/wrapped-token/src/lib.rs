@@ -253,9 +253,8 @@ impl WrappedTokenContract {
             panic!("burn amount exceeds total wrapped supply");
         }
 
-        // Burn the user's stellar-side tokens (SEP-41 burn requires user auth in the call tree)
-        token_client.burn(&user, &amount);
-
+        // FIX #560: Update total_wrapped BEFORE burning (CEI pattern)
+        // This ensures accounting is updated before the external call
         wrapped.total_wrapped = wrapped
             .total_wrapped
             .checked_sub(amount)
@@ -267,6 +266,9 @@ impl WrappedTokenContract {
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
         );
+
+        // Now burn the user's stellar-side tokens (SEP-41 burn requires user auth in the call tree)
+        token_client.burn(&user, &amount);
 
         env.events().publish(
             (symbol_short!("wrapped"), symbol_short!("burned")),

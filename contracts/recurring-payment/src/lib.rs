@@ -224,6 +224,11 @@ impl RecurringPaymentContract {
             panic!("unauthorized");
         }
 
+        // FIX #558: Only allow pausing Active payments
+        if recurring.status != RecurringStatus::Active {
+            panic!("can only pause an active payment");
+        }
+
         recurring.status = RecurringStatus::Paused;
         let _ttl_key = DataKey::Payment(payment_id);
         env.storage().persistent().set(&_ttl_key, &recurring);
@@ -248,6 +253,11 @@ impl RecurringPaymentContract {
 
         if recurring.payer != payer {
             panic!("unauthorized");
+        }
+
+        // FIX #557: Only allow resuming Paused payments
+        if recurring.status != RecurringStatus::Paused {
+            panic!("payment is not paused");
         }
 
         recurring.status = RecurringStatus::Active;

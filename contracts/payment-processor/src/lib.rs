@@ -223,6 +223,31 @@ impl PaymentProcessorContract {
             panic!("insufficient balance");
         }
 
+        // FIX #559: Record payment BEFORE executing transfers (CEI pattern)
+        // This ensures the payment exists in storage before any external calls
+        let payment = Payment {
+            payer: payer.clone(),
+            recipient: recipient.clone(),
+            token: token.clone(),
+            amount,
+            fee_charged: fee,
+            status: PaymentStatus::Processing,
+            created_at: env.ledger().timestamp(),
+            processed_at: None,
+        };
+
+        let _ttl_key = DataKey::Payment(payment_id);
+        env.storage().persistent().set(&_ttl_key, &payment);
+        env.storage().persistent().extend_ttl(
+            &_ttl_key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+        env.storage()
+            .instance()
+            .set(&DataKey::NextPaymentId, &(payment_id + 1));
+
+        // Now execute token transfers
         // Transfer the full amount to the contract first so that both outgoing
         // distributions share a single payer authorization.  If either
         // distribution fails the entire transaction rolls back, including this
@@ -239,28 +264,16 @@ impl PaymentProcessorContract {
             token_client.transfer(&contract_address, &treasury, &fee);
         }
 
-        // Record payment
-        let payment = Payment {
-            payer: payer.clone(),
-            recipient: recipient.clone(),
-            token: token.clone(),
-            amount,
-            fee_charged: fee,
-            status: PaymentStatus::Completed,
-            created_at: env.ledger().timestamp(),
-            processed_at: Some(env.ledger().timestamp()),
-        };
-
-        let _ttl_key = DataKey::Payment(payment_id);
-        env.storage().persistent().set(&_ttl_key, &payment);
+        // Update payment status to Completed after successful transfers
+        let mut completed_payment = payment;
+        completed_payment.status = PaymentStatus::Completed;
+        completed_payment.processed_at = Some(env.ledger().timestamp());
+        env.storage().persistent().set(&_ttl_key, &completed_payment);
         env.storage().persistent().extend_ttl(
             &_ttl_key,
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
         );
-        env.storage()
-            .instance()
-            .set(&DataKey::NextPaymentId, &(payment_id + 1));
 
         // Update daily volume
         env.storage()
