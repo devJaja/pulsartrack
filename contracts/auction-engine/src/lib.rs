@@ -193,19 +193,13 @@ impl AuctionEngineContract {
             .unwrap();
         let token_client = token::Client::new(&env, &token_addr);
 
-        // Refund the previous highest bidder if they exist
-        if let Some(prev_winner) = &auction.winner {
-            if let Some(prev_amount) = auction.winning_bid {
-                token_client.transfer(&env.current_contract_address(), prev_winner, &prev_amount);
-                // Clear previous bidder's deposit record as they are now refunded
-                env.storage()
-                    .persistent()
-                    .remove(&DataKey::BidderBid(auction_id, prev_winner.clone()));
-            }
-        }
-
-        // Transfer the new bid into the contract
-        token_client.transfer(&bidder, &env.current_contract_address(), &amount);
+        let prev_bid = if let Some(prev_winner) = &auction.winner {
+            auction
+                .winning_bid
+                .map(|prev_amount| (prev_winner.clone(), prev_amount))
+        } else {
+            None
+        };
 
         let bid = Bid {
             bidder: bidder.clone(),
@@ -258,6 +252,18 @@ impl AuctionEngineContract {
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
         );
+
+        // Refund the previous highest bidder if they exist
+        if let Some((prev_winner, prev_amount)) = prev_bid {
+            // Clear previous bidder's deposit record as they are now refunded
+            env.storage()
+                .persistent()
+                .remove(&DataKey::BidderBid(auction_id, prev_winner.clone()));
+            token_client.transfer(&env.current_contract_address(), &prev_winner, &prev_amount);
+        }
+
+        // Transfer the new bid into the contract
+        token_client.transfer(&bidder, &env.current_contract_address(), &amount);
 
         env.events().publish(
             (symbol_short!("bid"), symbol_short!("placed")),

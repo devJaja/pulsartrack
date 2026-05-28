@@ -214,20 +214,12 @@ impl CreativeMarketplaceContract {
         let fee = (listing.price * fee_bps as i128) / 10_000;
         let creator_amount = listing.price - fee;
 
-        // Process payment
         let token_addr: Address = env
             .storage()
             .instance()
             .get(&DataKey::TokenAddress)
             .unwrap();
         let token_client = token::Client::new(&env, &token_addr);
-        token_client.transfer(&buyer, &listing.creator, &creator_amount);
-
-        // Fee to admin
-        if fee > 0 {
-            let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-            token_client.transfer(&buyer, &admin, &fee);
-        }
 
         let now = env.ledger().timestamp();
         let expires_at = license_duration_secs.map(|d| now + d);
@@ -241,7 +233,7 @@ impl CreativeMarketplaceContract {
             expires_at,
         };
 
-        let _ttl_key = DataKey::License(listing_id, buyer);
+        let _ttl_key = DataKey::License(listing_id, buyer.clone());
         env.storage().persistent().set(&_ttl_key, &license);
         env.storage().persistent().extend_ttl(
             &_ttl_key,
@@ -264,6 +256,15 @@ impl CreativeMarketplaceContract {
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
         );
+
+        // Process payment after license and listing state are recorded.
+        token_client.transfer(&buyer, &listing.creator, &creator_amount);
+
+        // Fee to admin
+        if fee > 0 {
+            let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+            token_client.transfer(&buyer, &admin, &fee);
+        }
 
         env.events().publish(
             (symbol_short!("license"), symbol_short!("purchased")),

@@ -270,27 +270,8 @@ impl GovernanceDaoContract {
             panic!("invalid voting power");
         }
 
-        // Lock tokens: Transfer from voter to the DAO contract
-        token_client.transfer(&voter, &env.current_contract_address(), &power);
-
-        // Record locked tokens
-        let _ttl_key = DataKey::LockedTokens(proposal_id, voter.clone());
-        env.storage().persistent().set(&_ttl_key, &power);
-        env.storage().persistent().extend_ttl(
-            &_ttl_key,
-            PERSISTENT_LIFETIME_THRESHOLD,
-            PERSISTENT_BUMP_AMOUNT,
-        );
-
-        // Record vote
-        match choice {
-            VoteChoice::For => proposal.votes_for += power,
-            VoteChoice::Against => proposal.votes_against += power,
-            VoteChoice::Abstain => proposal.votes_abstain += power,
-        }
-
         let vote = Vote {
-            choice,
+            choice: choice.clone(),
             power,
             voted_at: env.ledger().timestamp(),
         };
@@ -309,6 +290,23 @@ impl GovernanceDaoContract {
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
         );
+
+        // Record locked tokens
+        let _ttl_key = DataKey::LockedTokens(proposal_id, voter.clone());
+        env.storage().persistent().set(&_ttl_key, &power);
+        env.storage().persistent().extend_ttl(
+            &_ttl_key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+
+        // Record vote
+        match choice {
+            VoteChoice::For => proposal.votes_for += power,
+            VoteChoice::Against => proposal.votes_against += power,
+            VoteChoice::Abstain => proposal.votes_abstain += power,
+        }
+
         let _ttl_key = DataKey::Proposal(proposal_id);
         env.storage().persistent().set(&_ttl_key, &proposal);
         env.storage().persistent().extend_ttl(
@@ -316,6 +314,9 @@ impl GovernanceDaoContract {
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
         );
+
+        // Lock tokens after recording the vote guard.
+        token_client.transfer(&voter, &env.current_contract_address(), &power);
 
         env.events().publish(
             (symbol_short!("gov"), symbol_short!("voted")),

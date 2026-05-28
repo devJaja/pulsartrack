@@ -313,7 +313,17 @@ impl MultisigTreasuryContract {
             .instance()
             .get(&DataKey::RequiredSigners)
             .unwrap();
-        let max_possible_approvals = total_signers - tx.rejections;
+        let proposer_rejected = signer == tx.proposer
+            || env
+                .storage()
+                .persistent()
+                .has(&DataKey::TxRejection(tx_id, tx.proposer.clone()));
+        let eligible_rejections = if proposer_rejected {
+            tx.rejections - 1
+        } else {
+            tx.rejections
+        };
+        let max_possible_approvals = total_signers - 1 - eligible_rejections;
 
         if max_possible_approvals < required {
             tx.status = TxStatus::Rejected;
