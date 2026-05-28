@@ -227,3 +227,22 @@ fn test_is_kyc_valid_nonexistent() {
     let (c, _) = setup(&env);
     assert!(!c.is_kyc_valid(&Address::generate(&env)));
 }
+
+#[test]
+#[should_panic(expected = "kyc expiry timestamp overflows u64")]
+fn test_verify_kyc_expiry_overflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin) = setup(&env);
+    let provider = Address::generate(&env);
+    let account = Address::generate(&env);
+    c.register_provider(&admin, &provider, &s(&env, "VerifyInc"));
+    c.submit_kyc(
+        &account,
+        &provider,
+        &KycLevel::Standard,
+        &s(&env, "DocHash"),
+        &s(&env, "US"),
+    );
+    c.verify_kyc(&provider, &account, &Some(u64::MAX));
+}

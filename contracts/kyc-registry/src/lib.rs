@@ -52,6 +52,17 @@ const INSTANCE_BUMP_AMOUNT: u32 = 86_400;
 const PERSISTENT_LIFETIME_THRESHOLD: u32 = 120_960;
 const PERSISTENT_BUMP_AMOUNT: u32 = 1_051_200;
 
+fn extend_kyc_record_ttl(env: &Env, account: &Address) {
+    let key = DataKey::KycRecord(account.clone());
+    if env.storage().persistent().has(&key) {
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
+    }
+}
+
 #[contract]
 pub struct KycRegistryContract;
 
@@ -173,7 +184,10 @@ impl KycRegistryContract {
         let now = env.ledger().timestamp();
         record.verified = true;
         record.verified_at = Some(now);
-        record.expires_at = expires_in_secs.map(|d| now + d);
+        record.expires_at = expires_in_secs.map(|d| {
+            now.checked_add(d)
+                .expect("kyc expiry timestamp overflows u64")
+        });
         record.verifier = Some(provider.clone());
 
         let _ttl_key = DataKey::KycRecord(account.clone());
@@ -227,11 +241,9 @@ impl KycRegistryContract {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-        if let Some(record) = env
-            .storage()
-            .persistent()
-            .get::<DataKey, KycRecord>(&DataKey::KycRecord(account))
-        {
+        let key = DataKey::KycRecord(account.clone());
+        if let Some(record) = env.storage().persistent().get::<DataKey, KycRecord>(&key) {
+            extend_kyc_record_ttl(&env, &account);
             if !record.verified {
                 return false;
             }
@@ -249,18 +261,21 @@ impl KycRegistryContract {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-        env.storage().persistent().get(&DataKey::KycRecord(account))
+        let key = DataKey::KycRecord(account.clone());
+        let record = env.storage().persistent().get::<DataKey, KycRecord>(&key);
+        if record.is_some() {
+            extend_kyc_record_ttl(&env, &account);
+        }
+        record
     }
 
     pub fn get_kyc_level(env: Env, account: Address) -> KycLevel {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-        if let Some(record) = env
-            .storage()
-            .persistent()
-            .get::<DataKey, KycRecord>(&DataKey::KycRecord(account))
-        {
+        let key = DataKey::KycRecord(account.clone());
+        if let Some(record) = env.storage().persistent().get::<DataKey, KycRecord>(&key) {
+            extend_kyc_record_ttl(&env, &account);
             if record.verified {
                 record.level
             } else {
