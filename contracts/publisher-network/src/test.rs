@@ -211,6 +211,35 @@ fn test_record_impression() {
 }
 
 #[test]
+#[should_panic(expected = "not in network")]
+fn test_record_impression_not_in_network() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _) = setup(&env);
+    c.record_impression(&Address::generate(&env));
+}
+
+#[test]
+#[should_panic(expected = "node not active")]
+fn test_record_impression_inactive_node() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _) = setup(&env);
+    let pub1 = Address::generate(&env);
+    let cats = vec![&env, s(&env, "tech")];
+    c.join_network(
+        &pub1,
+        &NodeType::Standard,
+        &10_000u64,
+        &100i128,
+        &s(&env, "US"),
+        &cats,
+    );
+    c.deactivate(&pub1);
+    c.record_impression(&pub1);
+}
+
+#[test]
 fn test_get_node_nonexistent() {
     let env = Env::default();
     env.mock_all_auths();

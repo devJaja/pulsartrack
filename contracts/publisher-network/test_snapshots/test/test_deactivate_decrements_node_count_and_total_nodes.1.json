@@ -69,6 +69,8 @@
         }
       ]
     ],
+    [],
+    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
@@ -76,7 +78,7 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-              "function_name": "record_impression",
+              "function_name": "deactivate",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
@@ -88,6 +90,8 @@
         }
       ]
     ],
+    [],
+    [],
     []
   ],
   "ledger": {
@@ -203,7 +207,7 @@
                         "symbol": "is_active"
                       },
                       "val": {
-                        "bool": true
+                        "bool": false
                       }
                     },
                     {
@@ -312,7 +316,7 @@
                                 "symbol": "active_nodes"
                               },
                               "val": {
-                                "u64": 1
+                                "u64": 0
                               }
                             },
                             {
@@ -328,7 +332,7 @@
                                 "symbol": "total_capacity"
                               },
                               "val": {
-                                "u64": 10000
+                                "u64": 0
                               }
                             },
                             {
@@ -336,7 +340,7 @@
                                 "symbol": "total_impressions_served"
                               },
                               "val": {
-                                "u64": 1
+                                "u64": 0
                               }
                             },
                             {
@@ -344,7 +348,7 @@
                                 "symbol": "total_nodes"
                               },
                               "val": {
-                                "u64": 1
+                                "u64": 0
                               }
                             }
                           ]
@@ -359,7 +363,7 @@
                           ]
                         },
                         "val": {
-                          "u64": 1
+                          "u64": 0
                         }
                       }
                     ]
