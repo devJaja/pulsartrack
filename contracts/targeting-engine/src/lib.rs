@@ -181,13 +181,18 @@ impl TargetingEngineContract {
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         oracle.require_auth();
 
+        let oracle_key = DataKey::AuthorizedOracle(oracle.clone());
         if !env
             .storage()
             .persistent()
-            .has(&DataKey::AuthorizedOracle(oracle.clone()))
+            .has(&oracle_key)
         {
             panic!("unauthorized");
         }
+        // Bump TTL on oracle authorization entry
+        env.storage()
+            .persistent()
+            .extend_ttl(&oracle_key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
 
         if score > MAX_TARGETING_SCORE {
             panic!("score must be 0-1000");

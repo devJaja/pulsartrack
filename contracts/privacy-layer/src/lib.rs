@@ -121,7 +121,10 @@ impl PrivacyLayerContract {
             third_party_sharing,
             consent_hash: consent_hash.into(),
             consented_at: env.ledger().timestamp(),
-            expires_at: expires_in.map(|d| env.ledger().timestamp() + d),
+            expires_at: expires_in.map(|d| {
+                env.ledger().timestamp().checked_add(d)
+                    .expect("consent expiry timestamp overflows u64")
+            }),
         };
 
         let _ttl_key = DataKey::Consent(user.clone());
@@ -195,6 +198,7 @@ impl PrivacyLayerContract {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        admin.require_auth();
         
         // Check if a verifier is configured - if so, only verifier can verify
         let verifier: Option<Address> = env.storage().instance().get(&DataKey::Verifier).unwrap_or(None);
@@ -231,11 +235,17 @@ impl PrivacyLayerContract {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        let consent_key = DataKey::Consent(user.clone());
         if let Some(consent) = env
             .storage()
             .persistent()
-            .get::<DataKey, PrivacyConsent>(&DataKey::Consent(user))
+            .get::<DataKey, PrivacyConsent>(&consent_key)
         {
+            // Bump TTL on persistent consent entry
+            env.storage()
+                .persistent()
+                .extend_ttl(&consent_key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+            
             // Check if consent has expired
             if let Some(expires) = consent.expires_at {
                 if expires <= env.ledger().timestamp() {
@@ -272,7 +282,16 @@ impl PrivacyLayerContract {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
-        env.storage().persistent().get(&DataKey::Consent(user))
+        let consent_key = DataKey::Consent(user.clone());
+        if let Some(consent) = env.storage().persistent().get::<DataKey, PrivacyConsent>(&consent_key) {
+            // Bump TTL on persistent consent entry
+            env.storage()
+                .persistent()
+                .extend_ttl(&consent_key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+            Some(consent)
+        } else {
+            None
+        }
     }
 
     pub fn get_proof(env: Env, proof_id: BytesN<32>) -> Option<AnonymousSegmentProof> {
