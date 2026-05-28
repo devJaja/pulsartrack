@@ -258,10 +258,22 @@ impl PublisherNetworkContract {
             .set(&DataKey::NodeCount, &count.saturating_sub(1));
     }
 
-    pub fn record_impression(env: Env, _publisher: Address) {
+    pub fn record_impression(env: Env, publisher: Address) {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+        publisher.require_auth();
+
+        let node: NetworkNode = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Node(publisher.clone()))
+            .expect("not in network");
+
+        if !node.is_active {
+            panic!("node not active");
+        }
+
         let mut stats: NetworkStats = env
             .storage()
             .instance()
