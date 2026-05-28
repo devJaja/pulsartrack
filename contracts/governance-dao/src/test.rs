@@ -65,6 +65,18 @@ impl MockGovToken {
     }
 }
 
+// ─── Mock execution target ────────────────────────────────────────────────────
+// When execute_proposal invokes target_contract via execute_governance,
+// this mock records the call so the test can verify it was invoked.
+
+#[soroban_contract]
+pub struct MockExecutionTarget;
+
+#[soroban_contractimpl]
+impl MockExecutionTarget {
+    pub fn execute_governance(_env: Env, _proposal_id: u64) {}
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 /// Deploy MockGovToken and set its total supply.
@@ -648,9 +660,9 @@ fn test_execute_proposal_emits_executed_event() {
 
     let (client, admin, _) = setup_with_mock_token(&env, 1_000);
 
+    let target = env.register_contract(None, MockExecutionTarget);
     let proposer = Address::generate(&env);
     let voter = Address::generate(&env);
-    let target = Address::generate(&env);
     let proposal_id = client.create_proposal(
         &proposer,
         &make_title(&env),
