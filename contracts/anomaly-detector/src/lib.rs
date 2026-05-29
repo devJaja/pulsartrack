@@ -305,8 +305,20 @@ impl AnomalyDetectorContract {
             .get(&DataKey::Report(report_id))
             .expect("report not found");
 
+        if report.resolved {
+            panic!("anomaly report is already resolved");
+        }
+
         report.resolved = true;
         report.resolved_at = Some(env.ledger().timestamp());
+
+        // Clear the persistent publisher flag so the publisher is no longer blocked
+        if let Some(ref pub_addr) = report.publisher {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::FlaggedPublisher(pub_addr.clone()));
+        }
+
         let _ttl_key = DataKey::Report(report_id);
         env.storage().persistent().set(&_ttl_key, &report);
         env.storage().persistent().extend_ttl(
