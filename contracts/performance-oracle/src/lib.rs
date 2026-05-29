@@ -125,6 +125,16 @@ impl PerformanceOracleContract {
             panic!("already attested");
         }
 
+        if quality_score > 100 {
+            panic!("quality_score must be 0-100");
+        }
+        if fraud_rate > 10_000 {
+            panic!("fraud_rate must be 0-10000 basis points");
+        }
+        if clicks > impressions {
+            panic!("clicks cannot exceed impressions");
+        }
+
         // Enforce hard cap on attesters to prevent exceeding Soroban CPU limits
         let count: u32 = env
             .storage()
