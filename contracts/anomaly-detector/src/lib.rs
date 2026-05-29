@@ -305,6 +305,10 @@ impl AnomalyDetectorContract {
             .get(&DataKey::Report(report_id))
             .expect("report not found");
 
+        if report.resolved {
+            panic!("anomaly report is already resolved");
+        }
+
         report.resolved = true;
         report.resolved_at = Some(env.ledger().timestamp());
         let _ttl_key = DataKey::Report(report_id);
