@@ -44,8 +44,8 @@ pub enum DataKey {
     ActiveProposalCount,
 }
 
-const INSTANCE_LIFETIME_THRESHOLD: u32 = 17_280;
-const INSTANCE_BUMP_AMOUNT: u32 = 86_400;
+const PERSISTENT_LIFETIME_THRESHOLD: u32 = 120_960;
+const PERSISTENT_BUMP_AMOUNT: u32 = 1_051_200;
 const PERSISTENT_LIFETIME_THRESHOLD: u32 = 34_560;
 const PERSISTENT_BUMP_AMOUNT: u32 = 259_200;
 
@@ -188,6 +188,14 @@ impl GovernanceCoreContract {
     }
 
     pub fn update_params(env: Env, admin: Address, params: GovernanceParams) {
+        
+        
+        if params.quorum_pct == 0 || params.quorum_pct > 100 { panic!("invalid quorum_pct"); }
+        if params.pass_threshold_pct == 0 || params.pass_threshold_pct > 100 { panic!("invalid pass_threshold_pct"); }
+        if params.voting_period_ledgers == 0 { panic!("voting_period_ledgers must be positive"); }
+        if params.max_active_proposals == 0 { panic!("max_active_proposals must be positive"); }
+        
+        
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);

@@ -173,7 +173,11 @@ impl AudienceSegmentsContract {
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         admin.require_auth();
-        let stored_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let mem_key = DataKey::Membership(segment_id, member.clone());
+        if !env.storage().persistent().has(&mem_key) {  
+        panic!("address is not a member of this segment");  
+        }
+
 
         let segment: Segment = env
             .storage()
