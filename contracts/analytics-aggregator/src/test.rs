@@ -45,9 +45,11 @@ fn test_record_impression() {
     let env = Env::default();
     env.mock_all_auths();
     let (c, _, oracle) = setup(&env);
-    c.record_impression(&oracle, &1u64, &100i128);
+    let viewer = Address::generate(&env);
+    c.record_impression(&oracle, &1u64, &viewer, &100i128);
     let a = c.get_campaign_analytics(&1u64).unwrap();
     assert_eq!(a.total_impressions, 1);
+    assert_eq!(a.unique_viewers, 1);
 }
 
 #[test]
@@ -55,7 +57,8 @@ fn test_record_click() {
     let env = Env::default();
     env.mock_all_auths();
     let (c, _, oracle) = setup(&env);
-    c.record_impression(&oracle, &1u64, &100i128);
+    let viewer = Address::generate(&env);
+    c.record_impression(&oracle, &1u64, &viewer, &100i128);
     c.record_click(&oracle, &1u64);
     let a = c.get_campaign_analytics(&1u64).unwrap();
     assert_eq!(a.total_clicks, 1);
@@ -68,8 +71,42 @@ fn test_record_impression_rejects_non_oracle() {
     env.mock_all_auths();
     let (c, _, _) = setup(&env);
     let caller = Address::generate(&env);
+    let viewer = Address::generate(&env);
 
-    c.record_impression(&caller, &1u64, &100i128);
+    c.record_impression(&caller, &1u64, &viewer, &100i128);
+}
+
+#[test]
+#[should_panic(expected = "spend must be non-negative")]
+fn test_record_impression_rejects_negative_spend() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _, oracle) = setup(&env);
+    let viewer = Address::generate(&env);
+
+    c.record_impression(&oracle, &1u64, &viewer, &-1i128);
+}
+
+#[test]
+fn test_record_impression_tracks_unique_viewers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _, oracle) = setup(&env);
+    let viewer1 = Address::generate(&env);
+    let viewer2 = Address::generate(&env);
+
+    c.record_impression(&oracle, &1u64, &viewer1, &100i128);
+    c.record_impression(&oracle, &1u64, &viewer1, &100i128);
+    c.record_impression(&oracle, &1u64, &viewer2, &100i128);
+
+    let a = c.get_campaign_analytics(&1u64).unwrap();
+    assert_eq!(a.total_impressions, 3);
+    assert_eq!(a.unique_viewers, 2);
+}
+
+#[test]
+fn test_hourly_stats_ttl_covers_current_hour() {
+    assert_eq!(AnalyticsAggregatorContract::hourly_stats_ttl_ledgers(), 720);
 }
 
 #[test]
@@ -79,8 +116,9 @@ fn test_record_click_rejects_non_oracle() {
     env.mock_all_auths();
     let (c, _, oracle) = setup(&env);
     let caller = Address::generate(&env);
+    let viewer = Address::generate(&env);
 
-    c.record_impression(&oracle, &1u64, &100i128);
+    c.record_impression(&oracle, &1u64, &viewer, &100i128);
     c.record_click(&caller, &1u64);
 }
 
@@ -106,7 +144,8 @@ fn test_record_conversion_increments_count() {
     let env = Env::default();
     env.mock_all_auths();
     let (c, _, oracle) = setup(&env);
-    c.record_impression(&oracle, &1u64, &100i128);
+    let viewer = Address::generate(&env);
+    c.record_impression(&oracle, &1u64, &viewer, &100i128);
     c.record_click(&oracle, &1u64);
     c.record_conversion(&oracle, &1u64);
 
@@ -121,7 +160,8 @@ fn test_record_conversion_calculates_cvr() {
     let (c, _, oracle) = setup(&env);
     // 4 impressions, 2 clicks, 1 conversion → cvr = 1/2 * 10000 = 5000
     for _ in 0..4 {
-        c.record_impression(&oracle, &1u64, &100i128);
+        let viewer = Address::generate(&env);
+        c.record_impression(&oracle, &1u64, &viewer, &100i128);
     }
     c.record_click(&oracle, &1u64);
     c.record_click(&oracle, &1u64);
@@ -138,7 +178,8 @@ fn test_cvr_stays_zero_without_clicks() {
     let (c, _, oracle) = setup(&env);
 
     // Impressions but no clicks — cvr guard prevents divide-by-zero
-    c.record_impression(&oracle, &1u64, &100i128);
+    let viewer = Address::generate(&env);
+    c.record_impression(&oracle, &1u64, &viewer, &100i128);
 
     // Manually set total_conversions via record_conversion requires a click first;
     // here we just confirm cvr is 0 without any clicks
@@ -163,8 +204,9 @@ fn test_record_conversion_rejects_non_oracle() {
     env.mock_all_auths();
     let (c, _, oracle) = setup(&env);
     let caller = Address::generate(&env);
+    let viewer = Address::generate(&env);
 
-    c.record_impression(&oracle, &1u64, &100i128);
+    c.record_impression(&oracle, &1u64, &viewer, &100i128);
     c.record_click(&oracle, &1u64);
     c.record_conversion(&caller, &1u64);
 }

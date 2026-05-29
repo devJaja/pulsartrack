@@ -118,6 +118,21 @@ fn test_schedule_payout_unauthorized() {
 }
 
 #[test]
+#[should_panic(expected = "execute_after must be in the future")]
+fn test_schedule_payout_rejects_execute_after_in_past() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, _, _) = setup(&env);
+    let recipient = Address::generate(&env);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = 500;
+    });
+
+    client.schedule_payout(&admin, &recipient, &1_000_000i128, &499u64, &None);
+}
+
+#[test]
 fn test_schedule_multiple_payouts() {
     let env = Env::default();
     env.mock_all_auths();
