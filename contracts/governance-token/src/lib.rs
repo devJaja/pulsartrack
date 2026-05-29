@@ -148,6 +148,10 @@ impl GovernanceTokenContract {
             panic!("invalid amount");
         }
 
+        if from == to {
+            panic!("sender and recipient cannot be the same address");
+        }
+
         let from_balance: i128 = env
             .storage()
             .persistent()

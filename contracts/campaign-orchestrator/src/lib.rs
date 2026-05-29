@@ -313,6 +313,14 @@ impl CampaignOrchestratorContract {
             panic!("invalid duration");
         }
 
+        // Validate daily_view_limit and cost_per_view
+        if daily_view_limit == 0 {
+            panic!("daily_view_limit must be at least 1");
+        }
+        if cost_per_view <= 0 {
+            panic!("cost_per_view must be positive");
+        }
+
         let counter: u64 = env
             .storage()
             .instance()

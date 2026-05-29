@@ -262,13 +262,8 @@ impl TokenBridgeContract {
         }
 
         let total_refund = deposit.amount + deposit.bridge_fee;
-        let token_client = token::Client::new(&env, &deposit.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &deposit.sender,
-            &total_refund,
-        );
-
+        
+        // Update deposit status and persist BEFORE token transfer (CEI pattern)
         deposit.status = BridgeStatus::Refunded;
         let _ttl_key = DataKey::Deposit(deposit_id);
         env.storage().persistent().set(&_ttl_key, &deposit);
@@ -276,6 +271,14 @@ impl TokenBridgeContract {
             &_ttl_key,
             PERSISTENT_LIFETIME_THRESHOLD,
             PERSISTENT_BUMP_AMOUNT,
+        );
+
+        // Perform token transfer after state update
+        let token_client = token::Client::new(&env, &deposit.token);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &deposit.sender,
+            &total_refund,
         );
     }
 
