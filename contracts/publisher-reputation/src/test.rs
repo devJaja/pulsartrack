@@ -273,11 +273,21 @@ fn test_update_uptime_repeated_calls_no_inflation() {
     assert_eq!(rep1.uptime_score, 95);
     assert_eq!(rep1.score, 519); // 500 + 95/5 = 500 + 19
 
+    // Advance ledger to satisfy cooldown
+    env.ledger().with_mut(|li| {
+        li.sequence_number += 17_281;
+    });
+
     // Second call with same uptime should not inflate
     c.update_uptime(&oracle, &pub1, &95u32);
     let rep2 = c.get_reputation(&pub1).unwrap();
     assert_eq!(rep2.uptime_score, 95);
     assert_eq!(rep2.score, 519); // Should remain the same
+
+    // Advance ledger to satisfy cooldown
+    env.ledger().with_mut(|li| {
+        li.sequence_number += 17_281;
+    });
 
     // Third call with same uptime
     c.update_uptime(&oracle, &pub1, &95u32);
@@ -298,10 +308,20 @@ fn test_update_uptime_recalculates_on_change() {
     let rep1 = c.get_reputation(&pub1).unwrap();
     assert_eq!(rep1.score, 520); // 500 + 100/5 = 500 + 20
 
+    // Advance ledger to satisfy cooldown
+    env.ledger().with_mut(|li| {
+        li.sequence_number += 17_281;
+    });
+
     // Update to 90% uptime
     c.update_uptime(&oracle, &pub1, &90u32);
     let rep2 = c.get_reputation(&pub1).unwrap();
     assert_eq!(rep2.score, 518); // 500 + 90/5 = 500 + 18
+
+    // Advance ledger to satisfy cooldown
+    env.ledger().with_mut(|li| {
+        li.sequence_number += 17_281;
+    });
 
     // Update to 95% uptime
     c.update_uptime(&oracle, &pub1, &95u32);
@@ -344,6 +364,11 @@ fn test_update_uptime_with_reviews_preserves_review_score() {
     let rep2 = c.get_reputation(&pub1).unwrap();
     assert_eq!(rep2.score, 530); // 510 + 100/5 = 510 + 20
 
+    // Advance ledger to satisfy cooldown
+    env.ledger().with_mut(|li| {
+        li.sequence_number += 17_281;
+    });
+
     // Update uptime again with same value - should not inflate
     c.update_uptime(&oracle, &pub1, &100u32);
     let rep3 = c.get_reputation(&pub1).unwrap();
@@ -358,8 +383,11 @@ fn test_update_uptime_multiple_rapid_calls() {
     let pub1 = Address::generate(&env);
     c.init_publisher(&pub1);
 
-    // Simulate rapid repeated calls with high uptime
+    // Simulate repeated calls with high uptime, advancing ledger each time to avoid cooldown error
     for _ in 0..10 {
+        env.ledger().with_mut(|li| {
+            li.sequence_number += 17_281;
+        });
         c.update_uptime(&oracle, &pub1, &100u32);
     }
 
@@ -367,4 +395,20 @@ fn test_update_uptime_multiple_rapid_calls() {
     // Score should be 520 (500 + 20), not inflated to 700 (500 + 10*20)
     assert_eq!(rep.score, 520);
     assert_eq!(rep.uptime_contribution, 20);
+}
+
+#[test]
+#[should_panic(expected = "uptime update cooldown active")]
+fn test_update_uptime_cooldown_enforced() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _, oracle) = setup(&env);
+    let pub1 = Address::generate(&env);
+    c.init_publisher(&pub1);
+
+    // First call succeeds
+    c.update_uptime(&oracle, &pub1, &95u32);
+
+    // Second call fails due to cooldown active (sequence number is still the same)
+    c.update_uptime(&oracle, &pub1, &95u32);
 }

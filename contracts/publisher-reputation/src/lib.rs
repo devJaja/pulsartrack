@@ -18,6 +18,7 @@ pub struct ReputationScore {
     pub last_slash_ledger: u32,
     pub last_updated: u64,
     pub uptime_contribution: u32, // Track the current uptime contribution to score
+    pub last_uptime_ledger: Option<u32>,
 }
 
 #[contracttype]
@@ -92,6 +93,7 @@ impl PublisherReputationContract {
             last_slash_ledger: 0,
             last_updated: env.ledger().timestamp(),
             uptime_contribution: 0,
+            last_uptime_ledger: None,
         };
 
         let _ttl_key = DataKey::Reputation(publisher);
@@ -261,6 +263,13 @@ impl PublisherReputationContract {
             .get(&DataKey::Reputation(publisher.clone()))
             .expect("publisher not registered");
 
+        let current_ledger = env.ledger().sequence();
+        if let Some(last_ledger) = rep.last_uptime_ledger {
+            if current_ledger <= last_ledger + 17_280 {
+                panic!("uptime update cooldown active");
+            }
+        }
+
         // Remove the previous uptime contribution from the score
         rep.score = rep.score.saturating_sub(rep.uptime_contribution);
 
@@ -276,6 +285,7 @@ impl PublisherReputationContract {
         rep.uptime_score = uptime;
         rep.uptime_contribution = new_contribution;
         rep.last_updated = env.ledger().timestamp();
+        rep.last_uptime_ledger = Some(current_ledger);
 
         let _ttl_key = DataKey::Reputation(publisher);
         env.storage().persistent().set(&_ttl_key, &rep);
