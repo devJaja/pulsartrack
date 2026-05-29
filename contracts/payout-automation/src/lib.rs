@@ -103,6 +103,11 @@ impl PayoutAutomationContract {
             panic!("amount must be positive");
         }
 
+        let now = env.ledger().timestamp();
+        if execute_after < now {
+            panic!("execute_after must be in the future");
+        }
+
         let min_payout: i128 = env
             .storage()
             .instance()
@@ -130,7 +135,7 @@ impl PayoutAutomationContract {
             recipient: recipient.clone(),
             token: token_addr,
             amount,
-            scheduled_at: env.ledger().timestamp(),
+            scheduled_at: now,
             execute_after,
             status: PayoutStatus::Scheduled,
             campaign_id,
@@ -145,31 +150,6 @@ impl PayoutAutomationContract {
             PERSISTENT_BUMP_AMOUNT,
         );
 
-        // Update publisher earnings: this payout is now pending for the recipient.
-        let key = DataKey::PublisherEarnings(recipient.clone());
-        let mut earnings: PublisherEarnings =
-            env.storage()
-                .persistent()
-                .get(&key)
-                .unwrap_or(PublisherEarnings {
-                    publisher: recipient.clone(),
-                    pending_amount: 0,
-                    total_paid: 0,
-                    last_payout: 0,
-                });
-
-        earnings.pending_amount = earnings
-            .pending_amount
-            .checked_add(amount)
-            .expect("pending_amount overflow");
-
-        env.storage().persistent().set(&key, &earnings);
-        env.storage().persistent().extend_ttl(
-            &key,
-            PERSISTENT_LIFETIME_THRESHOLD,
-            PERSISTENT_BUMP_AMOUNT,
-        );
-
         env.storage()
             .instance()
             .set(&DataKey::PayoutCounter, &payout_id);
@@ -180,11 +160,17 @@ impl PayoutAutomationContract {
             .instance()
             .get(&DataKey::MaxPendingAmount)
             .unwrap_or(MAX_PENDING_AMOUNT);
-        if earnings.pending_amount > max_pending {
+        let pending_amount = env
+            .storage()
+            .persistent()
+            .get::<_, PublisherEarnings>(&DataKey::PublisherEarnings(recipient.clone()))
+            .map(|earnings| earnings.pending_amount)
+            .unwrap_or(0);
+        if pending_amount > max_pending {
             // Trigger an event for the admin to notice the high pending amount
             env.events().publish(
                 (symbol_short!("payout"), symbol_short!("alert")),
-                (recipient.clone(), earnings.pending_amount),
+                (recipient.clone(), pending_amount),
             );
         }
 
@@ -253,10 +239,7 @@ impl PayoutAutomationContract {
             .total_paid
             .checked_add(payout.amount)
             .expect("total_paid overflow");
-        earnings.pending_amount = earnings
-            .pending_amount
-            .checked_sub(payout.amount)
-            .expect("insufficient pending earnings");
+        earnings.pending_amount = earnings.pending_amount.saturating_sub(payout.amount);
         earnings.last_payout = env.ledger().timestamp();
         env.storage().persistent().set(&key, &earnings);
         env.storage().persistent().extend_ttl(
