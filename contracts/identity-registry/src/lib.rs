@@ -224,6 +224,10 @@ impl IdentityRegistryContract {
             .get(&DataKey::Identity(account.clone()))
             .expect("identity not found");
 
+        if identity.status == IdentityStatus::Suspended || identity.status == IdentityStatus::Revoked {
+            panic!("suspended or revoked identities cannot update metadata");
+        }
+
         identity.metadata_hash = metadata_hash;
         identity.last_activity = env.ledger().timestamp();
 

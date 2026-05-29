@@ -310,3 +310,21 @@ fn test_is_verified_nonexistent() {
     let (c, _) = setup(&env);
     assert!(!c.is_verified(&Address::generate(&env)));
 }
+
+#[test]
+#[should_panic(expected = "suspended or revoked identities cannot update metadata")]
+fn test_update_metadata_suspended_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin) = setup(&env);
+    let account = Address::generate(&env);
+    c.register(
+        &account,
+        &IdentityType::Advertiser,
+        &s(&env, "Alice"),
+        &s(&env, "QmOld"),
+    );
+    c.suspend_identity(&admin, &account);
+    c.update_metadata(&account, &s(&env, "QmNew"));
+}
+
